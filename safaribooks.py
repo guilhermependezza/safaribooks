@@ -160,7 +160,6 @@ class Display:
     def parse_description(self, desc):
         if not desc:
             return "n/d"
-
         try:
             return html.fromstring(desc).text_content()
 
@@ -540,7 +539,6 @@ class SafariBooks:
 
         if "last_chapter_read" in response:
             del response["last_chapter_read"]
-
         for key, value in response.items():
             if value is None:
                 response[key] = 'n/a'
@@ -812,19 +810,10 @@ class SafariBooks:
             self.chapter_title = next_chapter["title"]
             self.filename = next_chapter["filename"]
 
-            asset_base_url = next_chapter['asset_base_url']
-            api_v2_detected = False
-            if 'v2' in next_chapter['content']:
-                asset_base_url = SAFARI_BASE_URL + "/api/v2/epubs/urn:orm:book:{}/files".format(self.book_id)
-                api_v2_detected = True
-
+            # Images
             if "images" in next_chapter and len(next_chapter["images"]):
-                for img_url in next_chapter['images']:
-                    if api_v2_detected:
-                        self.images.append(asset_base_url + '/' + img_url)
-                    else:
-                        self.images.append(urljoin(next_chapter['asset_base_url'], img_url))
-
+                self.images.extend(urljoin(next_chapter['asset_base_url'], img_url)
+                                   for img_url in next_chapter['images'])
 
             # Stylesheets
             self.chapter_stylesheets = []
@@ -872,9 +861,11 @@ class SafariBooks:
         self.css_done_queue.put(1)
         self.display.state(len(self.css), self.css_done_queue.qsize())
 
-
     def _thread_download_images(self, url):
         image_name = url.split("/")[-1]
+        IMAGE_BASE_URL = "https://learning.oreilly.com/api/v2/epubs/urn:orm:book:"
+        correct_url = IMAGE_BASE_URL + self.book_id + "/files/assets/" + image_name
+        print(correct_url)
         image_path = os.path.join(self.images_path, image_name)
         if os.path.isfile(image_path):
             if not self.display.images_ad_info.value and url not in self.images[:self.images.index(url)]:
@@ -886,7 +877,7 @@ class SafariBooks:
                 self.display.images_ad_info.value = 1
 
         else:
-            response = self.requests_provider(urljoin(SAFARI_BASE_URL, url), stream=True)
+            response = self.requests_provider(correct_url, perform_redirect = True, stream=True)
             if response == 0:
                 self.display.error("Error trying to retrieve this image: %s\n    From: %s" % (image_name, url))
                 return
@@ -929,6 +920,7 @@ class SafariBooks:
 
         # "self._start_multiprocessing" seems to cause problem. Switching to mono-thread download.
         for image_url in self.images:
+            print("image url: ", image_url)
             self._thread_download_images(image_url)
 
     def create_content_opf(self):
